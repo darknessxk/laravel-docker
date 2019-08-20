@@ -1,0 +1,94 @@
+version: '2'
+
+services:
+  ftp:
+    image: vimagick/pure-ftpd
+    ports:
+      - "21:21"
+    volumes:
+      - ./data/ftpuser:/home/ftpuser
+      - ./data/pure-ftpd:/etc/pure-ftpd
+    privileged: true
+    restart: always
+    networks:
+      - mynetwork
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    volumes:
+      - redis-data:/data
+    ports:
+      - 6379:6379
+    networks:
+      - mynetwork
+
+  elasticsearch:
+    image: elasticsearch:7.3.0
+    container_name: elasticsearch
+    volumes:
+      - elasticsearch-data:/data
+      - ./docker/elasticsearch/logging.yml:/usr/share/elasticsearch/config/logging.yml
+      - ./docker/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+    ports:
+      - 9300:9300
+    networks:
+      - mynetwork
+
+  mailcatcher:
+    build:
+      context: ./docker/mailcatcher
+    container_name: mailcatcher
+    environment:
+      MAIL_HOST: mailcatcher
+      MAIL_PORT: 1025
+    ports:
+      - 1080:1080
+      - 1025:1025
+    networks:
+      - mynetwork
+
+  php:
+    build:
+      context: ./docker/php7-fpm
+    image: laravel:php-fpm
+    container_name: php
+    depends_on:
+      - redis
+      - elasticsearch
+      - mailcatcher
+    entrypoint:
+      - php-fpm
+    environment:
+      REDIS_HOST: 'redis'
+      ELASTICSEARCH_HOST: 'elasticsearch'
+      MAILCATCHER_HOST: 'mailcatcher'
+      DEBUG: 'true'
+    volumes:
+      - ./app/:/var/www/html:rw
+    networks:
+      - mynetwork
+
+  web:
+    image: nginx:1.17.3
+    container_name: nginx
+    depends_on:
+      - php
+    volumes_from:
+      - php
+    volumes:
+      - ./docker/nginx/default:/etc/nginx/conf.d/default.conf
+    ports:
+      - 80:80
+    networks:
+      - mynetwork
+
+volumes:
+  redis-data:
+    driver: "local"
+  elasticsearch-data:
+    driver: "local"
+
+networks:
+  mynetwork:
+    driver: bridge
